@@ -1,1 +1,0 @@
-., .., .git, LICENSE, README.md, tmp.txt
