@@ -1,4 +1,4 @@
-# pyECoGpipeline
+# ECoGpypeline
 python pipeline for analyzing ecog data
 
 Installation
