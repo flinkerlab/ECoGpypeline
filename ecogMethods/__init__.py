@@ -20,6 +20,7 @@ import time
 import scipy as sp
 
 from scipy.signal import spectrogram, hamming, resample_poly
+import scipy.signal as sig
 from scipy.io import wavfile as wf
 
 import matplotlib as mpl
@@ -145,7 +146,7 @@ def load_h5(path, name): # load HDF5 files
 
 def create_subj_globals(subj, block, srate, ANsrate, elecs, bad_elecs, TANK, 
                         root_path = r'\\research-cifs.nyumc.org\Research\Epilepsy_ECOG\SharedAnalysis\Testing',
-                       create_dir= True, NY=False):
+                       create_dir= False, NY=False):
     a = "analysis"
     d = "data"
     
@@ -247,25 +248,14 @@ def create_subj_globals(subj, block, srate, ANsrate, elecs, bad_elecs, TANK,
 
 
 def get_subj_globals(subj, block, root_path = r'\\research-cifs.nyumc.org\Research\Epilepsy_ECOG\SharedAnalysis\Testing',
-                    create_dir= True, NY=False, from_mat=False, matDir=""):
+                    NY=False, from_mat=False, matDir=""):
     a = "analysis"
     if from_mat:
         glob= hdf5storage.loadmat(op.join(matDir,a,block,'subj_globals.mat'))
         G = Globals(op.join(matDir),op.join(matDir,a,block), op.join(matDir,'data',block), glob['subj'][0],glob['srate'][0][0],
                     glob['ANsrate'][0][0], glob['elecs'][0], glob['bad_elecs'][0], glob['TANK'][0])
     else:
-        # would need to comment out if sharing with others
-        if create_dir==True:
-            if root_path.endswith(subj):
-                pth = root_path
-                print("Continuing in current directory", root_path)
-            elif root_path.endswith("subjsPython"):
-                pth = op.join(root_path, subj)
-            else:
-                pth = op.join(root_path, "subjsPython", subj)
-        else:
-            pth = root_path
-            print("Continuing in current directory", root_path)
+        pth= root_path
         if ~subj.startswith("NY") & NY==True:
             raise ValueError("Subject number must start with NY")
         pre_dir = ""
@@ -289,12 +279,12 @@ def get_subj_globals(subj, block, root_path = r'\\research-cifs.nyumc.org\Resear
 # In[37]:
 
 
-def extract_task_events(trigger_name, task, subj, srate = 512, start = 0, stop = '', eventMin = 150, thresh=''):
+def extract_task_events(data,times, task, subj, srate = 512,start=0, eventMin = 150, thresh=''):
     scalar = int(srate/512)
     eventMin = eventMin*scalar
-    if stop =='':
-        stop==input("Need a value for 'stop'")
-    data,times = raw.copy().pick_channels([trigger_name])[:,start:stop]
+#     if stop =='':
+#         stop==input("Need a value for 'stop'")
+#     data,times = raw.copy().pick_channels([trigger_name])[:,start:stop]
     
     data = data-np.mean(data)#mean center
     data = data/abs(max(data.T))#normalize
@@ -326,6 +316,7 @@ def extract_task_events(trigger_name, task, subj, srate = 512, start = 0, stop =
     e1.onset = np.subtract(e1.onset,start)
     
     return e1
+
 
 
 # In[32]:
@@ -532,7 +523,7 @@ def my_conv(data = np.array([]), length = 100):
 # In[42]:
 
 
-def create_CAR(subj, block, bad_elecs, root_path, create_dir= True, NY=False):
+def create_CAR(subj, block, bad_elecs, root_path, create_dir= False, NY=False):
     
     
     if create_dir==True:
@@ -585,7 +576,7 @@ def create_CAR(subj, block, bad_elecs, root_path, create_dir= True, NY=False):
 
 
 def plot_single(subj, task, elec, params, root_path,
-                f1=75, f2=150, raw=0, gdat = '', db=0, ignore_target='', from_mat=False, matDir='', create_dir = False):
+                f1=75, f2=150, raw=0, gdat = '', db=0, ignore_target='', from_mat=False, matDir=''):
 #     raw    - 0 for raw trace, 1 for power envelope
 #     db     - flag to go into debug mode after plotting
 #     params - default are:
@@ -608,7 +599,7 @@ def plot_single(subj, task, elec, params, root_path,
 #        params.scale = 0.8;
 #        plot_single('JH2','phr',22,0.1,20,0,params)
     TrialsMTX = [] ############################# was defined as params, we don't know why
-    x = get_subj_globals(subj, task, root_path, from_mat=from_mat, matDir=matDir, create_dir=create_dir)
+    x = get_subj_globals(subj, task, root_path, from_mat=from_mat, matDir=matDir)
     if gdat == '':
         if from_mat==True:
             if params.noCar == False:
@@ -739,90 +730,80 @@ def plot_single(subj, task, elec, params, root_path,
 
 
 def detect_bads(signal, low_bound=10, up_bound=65, convolve = False, wind = 0, plot=False,thresh=1):
-    datMaxs= [max(abs(i)) for i in data]
+    datMaxs= [max(abs(i)) for i in signal]
     maxDev= np.std(datMaxs)
+#     print('maxDev: ', maxDev)
     maxZs= [(i-np.mean(datMaxs))/maxDev for i in datMaxs]
-    maxBads= [i for i,val in enumerate(maxZs) if np.abs(val) >=.8]
+    maxBads= [i for i,val in enumerate(maxZs) if np.abs(val) >=.8*thresh]
+#     print('maxBads: ', maxBads)
     ft_sig = [np.abs(np.fft.fft(i))[low_bound:up_bound] for i in signal]
     datMeans= [np.mean(i) for i in ft_sig[:]]
     datDev= np.std(datMeans)
+#     print('datDev: ', datDev)
     datZs= [(i-np.mean(datMeans))/datDev for i in datMeans]
-    zBads= [i for i,val in enumerate(datZs) if np.abs(val) >=thresh/2]
+    zBads= [i for i,val in enumerate(datZs) if np.abs(val) >=thresh/1.8]
+#     print('zBads: ', zBads)
+ 
     return set(maxBads+zBads)
 
 
 # In[44]:
 
 
-def extract_blocks(trigger_name, subj, srate=512, blockMin=90000, eventMin=256,gap=2000, trigger_len=700, thresh=.09):
-    scalar = int(srate/512)
-    blockMin = scalar * blockMin
-    eventMin = scalar * eventMin
-    gap = scalar * gap
-    trigger_len = scalar * trigger_len
-
-    data,times = raw.copy().pick_channels([trigger_name])[:,:]
+def extract_blocks(data, times, subj, tasks=[], 
+                   srate=512, blockMin=180, eventMin=1,gap=10, trigger_len=1.5, thresh=.09):
+    scalar = int((srate/512)*srate)
+    blockMin = int(scalar * blockMin)
+    eventMin = int(scalar * eventMin)
+    gap = int(scalar * gap)
+    trigger_len = scalar * trigger_len #length of block level trigger
+    
+    
     data = data-np.mean(data)#mean center
+    data=data.clip(min=0)
     data= data/abs(max(data.T))#normalize
-    task=['picN', 'visRead', 'audRep','audN', 'senComp']
+
     i=0
     blocks=[]
     spikes=0
+   
     while i< len(times):
         
         j=0
         if data.T[i]>thresh:
-#           
+         
             spikes+=1
-            hit=times[i]*srate # marks index-time for trigger 
-            i=i+70*scalar       #advances more than length of trigger spike
+            hit=times[i]*scalar # marks index-time for trigger 
+            i=i+int(.15*scalar)       #advances more than length of trigger spike
             
-            while j<50*scalar:  #searches for next spike of block-level trigger
-                
+            while j<int(.1*scalar):  #searches for next spike of block-level trigger
+
                 j=j+1
                 if data.T[i+j]>thresh: # if found, mark the hit time
-                    blocks.append(hit+trigger_len)
-                    i=i+blockMin  #advance a little below the minimum block time
-                    j=51*scalar         # exit j-loop
+                    blocks.append(hit+int(trigger_len))
+                    i=int(i+blockMin)  #advance a little below the minimum block time
+                    j=int(.16*scalar)         # exit j-loop
                     
-                    #### need to account for finding task triggers
-            i=i+50*scalar
+                   
+            i=i+int(.16*scalar)
     
         i=i+1
+
     blocks=np.asarray(blocks)
     blocks=blocks.astype(int)
-#     data= abs(data)
-#     smooz_data = savgol_filter(data[0,:], 153, 3)
-#     blockSums= [int(sum(abs(data[0][(blocks[t]-trigger_len):(blocks[t])]))) for t,v in enumerate(blocks)]
-    
-#     taskorder=[]
-#     for i in blockSums:
-#         if i > 110:
-#             taskorder.append('picN')
-#         elif i >100:
-#             taskorder.append('visRead')
-#         elif i >40:
-#             taskorder.append('audRep')
-#         elif i >24:
-#             taskorder.append('audN')
-#         elif i  >15:
-#             taskorder.append('senComp')       
-                
-    
+  
+
     print('Found {0} blocks for {1}\n'.format(len(blocks), subj))
+
     block_times=[]
     for t,v in enumerate(blocks):
         try:
-            block_times.append([int(v+trigger_len),int(blocks[t+1]-gap)])
+            block_times.append([int(v+int(trigger_len)),int(blocks[t+1]-gap)])
         except:
-            if hit+gap <= len(data):
-                block_times.append([int(v+trigger_len),int(hit+gap)])
-                
-            else:
-                block_times.append([int(v+trigger_len),int(times[-1]*srate)])
+            block_times.append([int(v+int(trigger_len)),int(times[-1]*srate)])
                 
         
-#     print('Block order followed by index times are as follows: {0} \n {1}'.format(taskorder[:], block_times[:]))   
+ 
     print('Block index times are as follows: {0}'.format(block_times[:]))  
     return block_times
 
