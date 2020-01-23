@@ -279,7 +279,7 @@ def get_subj_globals(subj, block, root_path = r'\\research-cifs.nyumc.org\Resear
 # In[37]:
 
 
-def extract_task_events(data,times, task, subj, srate = 512,start=0, eventMin = 150, thresh=''):
+def extract_task_events(data,times, task, subj, srate = 512,start=0, eventMin = 150, thresh='', practiceTrials=''):
     scalar = int(srate/512)
     eventMin = eventMin*scalar
 #     if stop =='':
@@ -306,7 +306,7 @@ def extract_task_events(data,times, task, subj, srate = 512,start=0, eventMin = 
             onsets+=1
             e1.event.append(task+'_'+str(len(e1.onset)))
             i=i+(eventMin)
-            if len(e1.onset)<4:
+            if len(e1.onset)<practiceTrials:
                 e1.badevent.append(1)
             else:
                 e1.badevent.append(0)
@@ -394,7 +394,7 @@ def band_pass(signal, sampling_rate=1000, lower_bound=70, upper_bound=150, tm_OR
     #                                       flatened to upper_bound-lower_bound
     #                                       length
 
-    #    The function returns the filtered hilbert signal (low->high) in the time domain
+    #    The function returns the frequency filtered raw signal (low->high) in the time domain
     
     max_freq=sampling_rate/2
     df=sampling_rate/len(signal)
@@ -556,18 +556,7 @@ def create_CAR(subj, block, bad_elecs, root_path, create_dir= False, NY=False):
 
 #    print('saving CAR')
     save_h5(op.join(data_path[:-8], 'car_data.h5'), "car_data", new_data)
-# #         print('saving Car Data')
-#     elif root_path.endswith("subjsPython"):
-#         save_h5(op.join(root_path, subj, "data", block,'car.h5'), "car", reference)
-# #         print('saving CAR')
-#         save_h5(op.join(root_path, subj, "data", block, 'car_data.h5'), "car_data", new_data)
-# #         print('saving Car Data')
-            
-#     else:
-#         save_h5(op.join(root_path, "subjsPython", subj, "data", block,'car.h5'), "car", reference)
-# #         print('saving CAR')
-#         save_h5(op.join(root_path, "subjsPython", subj, "data", block, 'car_data.h5'), "car_data", new_data)
-# #         print('saving Car Data')
+
     print('saving car and reference')
     return new_data, reference
 
@@ -576,7 +565,7 @@ def create_CAR(subj, block, bad_elecs, root_path, create_dir= False, NY=False):
 
 
 def plot_single(subj, task, elec, params, root_path,
-                f1=75, f2=150, raw=0, gdat = '', db=0, ignore_target='', from_mat=False, matDir=''):
+                f1=70, f2=150, raw=0, gdat = '', db=0, ignore_target='', from_mat=False, matDir=''):
 #     raw    - 0 for raw trace, 1 for power envelope
 #     db     - flag to go into debug mode after plotting
 #     params - default are:
@@ -598,7 +587,7 @@ def plot_single(subj, task, elec, params, root_path,
 #        params.baseline = 0;
 #        params.scale = 0.8;
 #        plot_single('JH2','phr',22,0.1,20,0,params)
-    TrialsMTX = [] ############################# was defined as params, we don't know why
+    TrialsMTX = [] 
     x = get_subj_globals(subj, task, root_path, from_mat=from_mat, matDir=matDir)
     if gdat == '':
         if from_mat==True:
@@ -751,10 +740,9 @@ def detect_bads(signal, low_bound=10, up_bound=65, convolve = False, wind = 0, p
 
 
 def extract_blocks(data, times, subj, tasks=[], 
-                   srate=512, blockMin=180, eventMin=1,gap=10, trigger_len=1.5, thresh=''):
+                   srate=512, blockMin=180,gap=10, trigger_len=1.5, thresh=''):
     scalar = int((srate/512)*srate)
     blockMin = int(scalar * blockMin)
-    eventMin = int(scalar * eventMin)
     gap = int(scalar * gap)
     trigger_len = scalar * trigger_len #length of block level trigger
     if thresh=='':
