@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[4]:
+# In[3]:
 
 
 from __future__ import with_statement
@@ -20,7 +20,6 @@ import time
 import scipy as sp
 
 from scipy.signal import spectrogram, hamming, resample_poly
-import scipy.signal as sig
 from scipy.io import wavfile as wf
 
 import matplotlib as mpl
@@ -32,7 +31,7 @@ plt.style.use('seaborn-white')
 
 from sklearn.linear_model import Ridge, Lasso, SGDRegressor
 from sklearn.model_selection import train_test_split, cross_val_score
-
+from sklearn.preprocessing import normalize as norm
 get_ipython().run_line_magic('matplotlib', 'inline')
 #%matplotlib qt
 
@@ -146,7 +145,7 @@ def load_h5(path, name): # load HDF5 files
 
 def create_subj_globals(subj, block, srate, ANsrate, elecs, bad_elecs, TANK, 
                         root_path = r'\\research-cifs.nyumc.org\Research\Epilepsy_ECOG\SharedAnalysis\Testing',
-                       create_dir= False, NY=False):
+                       create_dir= True, NY=False):
     a = "analysis"
     d = "data"
     
@@ -248,14 +247,25 @@ def create_subj_globals(subj, block, srate, ANsrate, elecs, bad_elecs, TANK,
 
 
 def get_subj_globals(subj, block, root_path = r'\\research-cifs.nyumc.org\Research\Epilepsy_ECOG\SharedAnalysis\Testing',
-                    NY=False, from_mat=False, matDir=""):
+                    create_dir= True, NY=False, from_mat=False, matDir=""):
     a = "analysis"
     if from_mat:
         glob= hdf5storage.loadmat(op.join(matDir,a,block,'subj_globals.mat'))
         G = Globals(op.join(matDir),op.join(matDir,a,block), op.join(matDir,'data',block), glob['subj'][0],glob['srate'][0][0],
                     glob['ANsrate'][0][0], glob['elecs'][0], glob['bad_elecs'][0], glob['TANK'][0])
     else:
-        pth= root_path
+        # would need to comment out if sharing with others
+        if create_dir==True:
+            if root_path.endswith(subj):
+                pth = root_path
+                print("Continuing in current directory", root_path)
+            elif root_path.endswith("subjsPython"):
+                pth = op.join(root_path, subj)
+            else:
+                pth = op.join(root_path, "subjsPython", subj)
+        else:
+            pth = root_path
+            print("Continuing in current directory", root_path)
         if ~subj.startswith("NY") & NY==True:
             raise ValueError("Subject number must start with NY")
         pre_dir = ""
@@ -279,12 +289,12 @@ def get_subj_globals(subj, block, root_path = r'\\research-cifs.nyumc.org\Resear
 # In[37]:
 
 
-def extract_task_events(data,times, task, subj, srate = 512,start=0, eventMin = 150, thresh='', practiceTrials=''):
+def extract_task_events(trigger_name, task, subj, srate = 512, start = 0, stop = '', eventMin = 150, thresh=''):
     scalar = int(srate/512)
     eventMin = eventMin*scalar
-#     if stop =='':
-#         stop==input("Need a value for 'stop'")
-#     data,times = raw.copy().pick_channels([trigger_name])[:,start:stop]
+    if stop =='':
+        stop==input("Need a value for 'stop'")
+    data,times = raw.copy().pick_channels([trigger_name])[:,start:stop]
     
     data = data-np.mean(data)#mean center
     data = data/abs(max(data.T))#normalize
@@ -306,7 +316,7 @@ def extract_task_events(data,times, task, subj, srate = 512,start=0, eventMin = 
             onsets+=1
             e1.event.append(task+'_'+str(len(e1.onset)))
             i=i+(eventMin)
-            if len(e1.onset)<practiceTrials:
+            if len(e1.onset)<4:
                 e1.badevent.append(1)
             else:
                 e1.badevent.append(0)
@@ -316,7 +326,6 @@ def extract_task_events(data,times, task, subj, srate = 512,start=0, eventMin = 
     e1.onset = np.subtract(e1.onset,start)
     
     return e1
-
 
 
 # In[32]:
@@ -394,7 +403,7 @@ def band_pass(signal, sampling_rate=1000, lower_bound=70, upper_bound=150, tm_OR
     #                                       flatened to upper_bound-lower_bound
     #                                       length
 
-    #    The function returns the frequency filtered raw signal (low->high) in the time domain
+    #    The function returns the filtered hilbert signal (low->high) in the time domain
     
     max_freq=sampling_rate/2
     df=sampling_rate/len(signal)
@@ -523,7 +532,7 @@ def my_conv(data = np.array([]), length = 100):
 # In[42]:
 
 
-def create_CAR(subj, block, bad_elecs, root_path, create_dir= False, NY=False):
+def create_CAR(subj, block, bad_elecs, root_path, create_dir= True, NY=False):
     
     
     if create_dir==True:
@@ -556,7 +565,18 @@ def create_CAR(subj, block, bad_elecs, root_path, create_dir= False, NY=False):
 
 #    print('saving CAR')
     save_h5(op.join(data_path[:-8], 'car_data.h5'), "car_data", new_data)
-
+# #         print('saving Car Data')
+#     elif root_path.endswith("subjsPython"):
+#         save_h5(op.join(root_path, subj, "data", block,'car.h5'), "car", reference)
+# #         print('saving CAR')
+#         save_h5(op.join(root_path, subj, "data", block, 'car_data.h5'), "car_data", new_data)
+# #         print('saving Car Data')
+            
+#     else:
+#         save_h5(op.join(root_path, "subjsPython", subj, "data", block,'car.h5'), "car", reference)
+# #         print('saving CAR')
+#         save_h5(op.join(root_path, "subjsPython", subj, "data", block, 'car_data.h5'), "car_data", new_data)
+# #         print('saving Car Data')
     print('saving car and reference')
     return new_data, reference
 
@@ -565,7 +585,7 @@ def create_CAR(subj, block, bad_elecs, root_path, create_dir= False, NY=False):
 
 
 def plot_single(subj, task, elec, params, root_path,
-                f1=70, f2=150, raw=0, gdat = '', db=0, ignore_target='', from_mat=False, matDir=''):
+                f1=75, f2=150, raw=0, gdat = '', db=0, ignore_target='', from_mat=False, matDir='', create_dir = False):
 #     raw    - 0 for raw trace, 1 for power envelope
 #     db     - flag to go into debug mode after plotting
 #     params - default are:
@@ -587,8 +607,8 @@ def plot_single(subj, task, elec, params, root_path,
 #        params.baseline = 0;
 #        params.scale = 0.8;
 #        plot_single('JH2','phr',22,0.1,20,0,params)
-    TrialsMTX = [] 
-    x = get_subj_globals(subj, task, root_path, from_mat=from_mat, matDir=matDir)
+    TrialsMTX = [] ############################# was defined as params, we don't know why
+    x = get_subj_globals(subj, task, root_path, from_mat=from_mat, matDir=matDir, create_dir=create_dir)
     if gdat == '':
         if from_mat==True:
             if params.noCar == False:
@@ -719,114 +739,128 @@ def plot_single(subj, task, elec, params, root_path,
 
 
 def detect_bads(signal, low_bound=10, up_bound=65, convolve = False, wind = 0, plot=False,thresh=1):
-    datMaxs= [max(abs(i)) for i in signal]
+    datMaxs= [max(abs(i)) for i in data]
     maxDev= np.std(datMaxs)
-#     print('maxDev: ', maxDev)
     maxZs= [(i-np.mean(datMaxs))/maxDev for i in datMaxs]
-    maxBads= [i for i,val in enumerate(maxZs) if np.abs(val) >=.8*thresh]
-#     print('maxBads: ', maxBads)
+    maxBads= [i for i,val in enumerate(maxZs) if np.abs(val) >=.8]
     ft_sig = [np.abs(np.fft.fft(i))[low_bound:up_bound] for i in signal]
     datMeans= [np.mean(i) for i in ft_sig[:]]
     datDev= np.std(datMeans)
-#     print('datDev: ', datDev)
     datZs= [(i-np.mean(datMeans))/datDev for i in datMeans]
-    zBads= [i for i,val in enumerate(datZs) if np.abs(val) >=thresh/1.8]
-#     print('zBads: ', zBads)
- 
+    zBads= [i for i,val in enumerate(datZs) if np.abs(val) >=thresh/2]
     return set(maxBads+zBads)
 
 
 # In[44]:
 
 
-def extract_blocks(data, times, subj, tasks=[], 
-                   srate=512, blockMin=180,gap=10, trigger_len=1.5, thresh=''):
-    scalar = int((srate/512)*srate)
-    blockMin = int(scalar * blockMin)
-    gap = int(scalar * gap)
-    trigger_len = scalar * trigger_len #length of block level trigger
-    if thresh=='':
-        thresh= abs(max(data.T))/8
-        print('thresh automatically set to: ',thresh) 
-    
-    data = data-np.mean(data)#mean center
-    data=data.clip(min=0)
-    data= data/abs(max(data.T))#normalize
+def extract_blocks(trigger_name, subj, srate=512, blockMin=90000, eventMin=256,gap=2000, trigger_len=700, thresh=.09):
+    scalar = int(srate/512)
+    blockMin = scalar * blockMin
+    eventMin = scalar * eventMin
+    gap = scalar * gap
+    trigger_len = scalar * trigger_len
 
+    data,times = raw.copy().pick_channels([trigger_name])[:,:]
+    data = data-np.mean(data)#mean center
+    data= data/abs(max(data.T))#normalize
+    task=['picN', 'visRead', 'audRep','audN', 'senComp']
     i=0
     blocks=[]
     spikes=0
-   
     while i< len(times):
         
         j=0
         if data.T[i]>thresh:
-         
+#           
             spikes+=1
-            hit=times[i]*scalar # marks index-time for trigger 
-            i=i+int(.15*scalar)       #advances more than length of trigger spike
+            hit=times[i]*srate # marks index-time for trigger 
+            i=i+70*scalar       #advances more than length of trigger spike
             
-            while j<int(.1*scalar):  #searches for next spike of block-level trigger
-
+            while j<50*scalar:  #searches for next spike of block-level trigger
+                
                 j=j+1
                 if data.T[i+j]>thresh: # if found, mark the hit time
-                    blocks.append(hit+int(trigger_len))
-                    i=int(i+blockMin)  #advance a little below the minimum block time
-                    j=int(.16*scalar)         # exit j-loop
+                    blocks.append(hit+trigger_len)
+                    i=i+blockMin  #advance a little below the minimum block time
+                    j=51*scalar         # exit j-loop
                     
-                   
-            i=i+int(.16*scalar)
+                    #### need to account for finding task triggers
+            i=i+50*scalar
     
         i=i+1
-
     blocks=np.asarray(blocks)
     blocks=blocks.astype(int)
-  
-
+#     data= abs(data)
+#     smooz_data = savgol_filter(data[0,:], 153, 3)
+#     blockSums= [int(sum(abs(data[0][(blocks[t]-trigger_len):(blocks[t])]))) for t,v in enumerate(blocks)]
+    
+#     taskorder=[]
+#     for i in blockSums:
+#         if i > 110:
+#             taskorder.append('picN')
+#         elif i >100:
+#             taskorder.append('visRead')
+#         elif i >40:
+#             taskorder.append('audRep')
+#         elif i >24:
+#             taskorder.append('audN')
+#         elif i  >15:
+#             taskorder.append('senComp')       
+                
+    
     print('Found {0} blocks for {1}\n'.format(len(blocks), subj))
-
     block_times=[]
     for t,v in enumerate(blocks):
         try:
-            block_times.append([int(v+int(trigger_len)),int(blocks[t+1]-gap)])
+            block_times.append([int(v+trigger_len),int(blocks[t+1]-gap)])
         except:
-            block_times.append([int(v+int(trigger_len)),int(times[-1]*srate)])
+            if hit+gap <= len(data):
+                block_times.append([int(v+trigger_len),int(hit+gap)])
+                
+            else:
+                block_times.append([int(v+trigger_len),int(times[-1]*srate)])
                 
         
- 
+#     print('Block order followed by index times are as follows: {0} \n {1}'.format(taskorder[:], block_times[:]))   
     print('Block index times are as follows: {0}'.format(block_times[:]))  
     return block_times
 
 
 # # Signal processing methods
 
-# In[46]:
+# In[4]:
 
 
 # zero mean each feature and divide each feature by its L2 norm
 def normalize(matrix):
     num_feats = np.shape(matrix)[0]
+    
+    # Zero mean
     the_mean = np.reshape(np.mean(matrix, axis = 1), (num_feats, 1))
     matrix = matrix - the_mean
     
-    the_norm = np.reshape(np.linalg.norm(matrix, axis = 1), (num_feats,1))
-    matrix = matrix/the_norm
+    # Normalize
+    #the_norm = np.reshape(np.linalg.norm(matrix, axis = 1), (num_feats,1))
+    #matrix = matrix/the_norm
+    matrix = norm(matrix, 'l2')
     return matrix
 
 
-# In[64]:
+# In[8]:
 
 
+# wind_len in units of spec time frames, or number of frames you want to time delay by
 def time_delay(X_data, wind_len):
     n_freq = np.shape(X_data)[1]
-    # Make X and y one trial
+    # Make X
     X_one_trial = np.concatenate(X_data, axis = 1)
     x = []
     x.append(X_one_trial[:, :]) #nondelayed collapsed spec
     
     for i in range(1, wind_len):
-        the_pad = np.zeros((n_freq, i)) ## or voss i guess?
-        the_data = np.concatenate((X_one_trial[:, i:], the_pad) , axis = 1) #pad our delayed data
+        the_pad = np.zeros((n_freq, i)) 
+        the_data = np.concatenate((the_pad,X_one_trial[:, :-i]) , axis = 1) #pad our delayed data
 
         x.append(the_data)
     
@@ -884,17 +918,18 @@ def file_to_waveform(file, make_plot = False, return_info = False):
             return (signal, fs, seconds, frames)
 
 
-# In[15]:
+# In[7]:
 
 
 # window and overlap time are in seconds
 # pretty sure this is the good one :) 
-def make_spectrogram(signal, fs, plot_dim, window_time = 0.04, overlap_time = 0.02, make_plot = True, zero_out = (1,0)): 
+def make_spectrogram(signal, fs, plot_dim, window_time = 0.04, overlap_time = 0.02, zero_out = (1,0), make_plot = True): 
     
     x = np.array(signal)
     window_length = int(window_time * fs)
     overlap_length = int(overlap_time * fs)
     f, t, intensity = spectrogram(x, fs, nperseg = window_length, noverlap = overlap_length)
+    intensity = intensity[1:]
     np.place(intensity, intensity == 0, [1e-300])
     
     logIntensity = np.log10(intensity)
@@ -990,7 +1025,7 @@ def plot_FT(signal, freq_bound, return_FT = False, convolve = False, wind = 0):
             return smooth
 
 
-# In[14]:
+# In[42]:
 
 
 def spectral_sub (plot_dim, file =  "", signal = [], fs = 0, new_file_name = "", noise_int = (0,1), 
@@ -1119,15 +1154,19 @@ def spectral_sub (plot_dim, file =  "", signal = [], fs = 0, new_file_name = "",
         
     # Comparing spectrograms, or just returning the clean spectrogram, if you want
     if compare_specs == True:
-        F_old, T_old, I_old = make_spectrogram(signal, fs, plot_dim, spec_window_time, spec_overlap_time, zero_out = zero_out)
+        F_old, T_old, I_old = make_spectrogram(signal, fs = fs, plot_dim = plot_dim, window_time = spec_window_time, overlap_time = spec_overlap_time, zero_out = zero_out)
+        plt.colorbar()
         plt.show()
         
-        F, T, I = make_spectrogram(final_clean_signal, fs, plot_dim, spec_window_time, spec_overlap_time, zero_out= zero_out)
+        F, T, I = make_spectrogram(final_clean_signal, fs = fs, plot_dim = plot_dim, window_time = spec_window_time, overlap_time = spec_overlap_time, zero_out= zero_out)
+        plt.colorbar()
+        plt.show()
+
         if return_spec == True:
             return I
     else:
         if return_spec == True:
-            F, T, I = make_spectrogram(final_clean_signal, fs, spec_window_time, spec_overlap_time, zero_out = zero_out, make_plot=False)
+            F, T, I = make_spectrogram(final_clean_signal, fs = fs, plot_dim = plot_dim, window_time = spec_window_time, overlap_time = spec_overlap_time, zero_out= zero_out, make_plot = False)
             return I
         
     # Write new audio to file, if you want 
