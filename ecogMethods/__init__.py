@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[3]:
+# In[7]:
 
 
 from __future__ import with_statement
@@ -14,8 +14,11 @@ import wave
 import os
 import os.path as op
 import h5py
+import math
 import warnings
 import time
+import scipy.signal as sig
+import hdf5storage
 
 import scipy as sp
 
@@ -31,7 +34,7 @@ plt.style.use('seaborn-white')
 
 from sklearn.linear_model import Ridge, Lasso, SGDRegressor
 from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.preprocessing import normalize as norm
+
 get_ipython().run_line_magic('matplotlib', 'inline')
 #%matplotlib qt
 
@@ -49,10 +52,6 @@ class Events:
         self.offset = []
         self.block =[]
         self.react = []
-        self.onset_r = []
-        self.offset_r = []
-        self.stimfile = []
-        self.stim = []
 
 
 # In[31]:
@@ -98,17 +97,16 @@ class Params:
         
 
 
-# In[16]:
+# In[ ]:
 
 
-class Plot_dim:
-    def __init__(self, x1, x2, y1, y2, z1, z2):
-        self.x1 = x1
-        self.x2 = x2
-        self.y1 = y1
-        self.y2 = y2
-        self.z1 = z1
-        self.z2 = z2
+
+
+
+# In[ ]:
+
+
+
 
 
 # In[ ]:
@@ -243,13 +241,13 @@ def create_subj_globals(subj, block, srate, ANsrate, elecs, bad_elecs, TANK,
     
 
 
-# In[62]:
+# In[9]:
 
 
 def get_subj_globals(subj, block, root_path = r'\\research-cifs.nyumc.org\Research\Epilepsy_ECOG\SharedAnalysis\Testing',
                     create_dir= True, NY=False, from_mat=False, matDir=""):
     a = "analysis"
-    if from_mat:
+    if from_mat==True:
         glob= hdf5storage.loadmat(op.join(matDir,a,block,'subj_globals.mat'))
         G = Globals(op.join(matDir),op.join(matDir,a,block), op.join(matDir,'data',block), glob['subj'][0],glob['srate'][0][0],
                     glob['ANsrate'][0][0], glob['elecs'][0], glob['bad_elecs'][0], glob['TANK'][0])
@@ -286,20 +284,19 @@ def get_subj_globals(subj, block, root_path = r'\\research-cifs.nyumc.org\Resear
     return G
 
 
-# In[37]:
+# In[4]:
 
 
-def extract_task_events(trigger_name, task, subj, srate = 512, start = 0, stop = '', eventMin = 150, thresh=''):
+def extract_task_events(data, times, task, subj, srate = 512, start = 0, stop = '', eventMin = 150, thresh=''):
     scalar = int(srate/512)
     eventMin = eventMin*scalar
     if stop =='':
         stop==input("Need a value for 'stop'")
-    data,times = raw.copy().pick_channels([trigger_name])[:,start:stop]
     
     data = data-np.mean(data)#mean center
     data = data/abs(max(data.T))#normalize
     data= data.clip(min=0)
-    data = sig.savgol_filter(data[0,:],window_length= 93, polyorder=1 )
+    data = sig.savgol_filter(data,window_length= 93, polyorder=1 )
     if thresh=='':
         thresh= abs(max(data.T))/2
     i=0
@@ -328,16 +325,19 @@ def extract_task_events(trigger_name, task, subj, srate = 512, start = 0, stop =
     return e1
 
 
-# In[32]:
+# In[10]:
 
 
 def get_events(subj,block,pth, from_mat=False, matDir=""):
+    
     eve=Events()
+    
     if from_mat==False:
         a = 'analysis'
         pre_dir = ""
         if sys.platform.startswith("lin"):
             pre_dir = "~/"
+
         event_dir = op.join(pre_dir, pth, "events.h5")
         hf = h5py.File(event_dir, "r")
         z = hf.get('Events')
@@ -347,11 +347,14 @@ def get_events(subj,block,pth, from_mat=False, matDir=""):
         event=event[...]
         badevent=z['/Events/badevent']
         badevent=badevent[...]
-        eve.event=event
-        eve.onset=onset
+        
+        eve.event=event 
+        eve.onset=onset 
         eve.badevent=badevent
         hf.close()
+        
     else:
+        
         matEvents=hdf5storage.loadmat(op.join(matDir,'analysis',block,'events.mat'))
         for i in matEvents['Events'][0]:
             eve.event.append(i[0][0])
@@ -359,29 +362,12 @@ def get_events(subj,block,pth, from_mat=False, matDir=""):
             eve.offset.append(i[2][0][0])
             eve.badevent.append(i[3][0][0])
             try:
-                eve.stimfile.append(i[4][0][0][0][0])
-            except:
-                continue
-                
-            try:
-                eve.stim.append(i[5][0][0][0][0])
-            except:
-                continue
-                
-            try:
-                eve.onset_r.append(i[7][0][0])
-            except:
-                continue
-            try:
-                eve.offset_r.append(i[8][0][0])
-            except:
-                continue
-            try:
-                eve.variable8.append(i[9][0][0])
-            except:
-                continue
-            try:
-                eve.variable9.append(i[10][0][0])
+                eve.stimfile.append(i[4][0][0][0])
+                eve.stim.append(i[5][0][0][0])
+                eve.responset.append(i[6][0][0])
+                eve.respoffset.append(i[7][0][0])
+                eve.variable8.append(i[8][0][0])
+                eve.variable9.append(i[9][0][0])
             except:
                 continue
     return eve
@@ -581,11 +567,11 @@ def create_CAR(subj, block, bad_elecs, root_path, create_dir= True, NY=False):
     return new_data, reference
 
 
-# In[18]:
+# In[63]:
 
 
 def plot_single(subj, task, elec, params, root_path,
-                f1=75, f2=150, raw=0, gdat = '', db=0, ignore_target='', from_mat=False, matDir='', create_dir = False):
+                f1=75, f2=150, raw=0, gdat = '', db=0, ignore_target='', from_mat=False, matDir=''):
 #     raw    - 0 for raw trace, 1 for power envelope
 #     db     - flag to go into debug mode after plotting
 #     params - default are:
@@ -608,7 +594,7 @@ def plot_single(subj, task, elec, params, root_path,
 #        params.scale = 0.8;
 #        plot_single('JH2','phr',22,0.1,20,0,params)
     TrialsMTX = [] ############################# was defined as params, we don't know why
-    x = get_subj_globals(subj, task, root_path, from_mat=from_mat, matDir=matDir, create_dir=create_dir)
+    x = get_subj_globals(subj, task, root_path, from_mat=from_mat, matDir=matDir)
     if gdat == '':
         if from_mat==True:
             if params.noCar == False:
@@ -735,44 +721,49 @@ def plot_single(subj, task, elec, params, root_path,
     return TrialsMTX
 
 
-# In[61]:
+# In[8]:
 
 
 def detect_bads(signal, low_bound=10, up_bound=65, convolve = False, wind = 0, plot=False,thresh=1):
-    datMaxs= [max(abs(i)) for i in data]
+    datMaxs= [max(abs(i)) for i in signal]
     maxDev= np.std(datMaxs)
     maxZs= [(i-np.mean(datMaxs))/maxDev for i in datMaxs]
-    maxBads= [i for i,val in enumerate(maxZs) if np.abs(val) >=.8]
+    maxBads= [i for i,val in enumerate(maxZs) if np.abs(val) >=.8*thresh]
     ft_sig = [np.abs(np.fft.fft(i))[low_bound:up_bound] for i in signal]
     datMeans= [np.mean(i) for i in ft_sig[:]]
     datDev= np.std(datMeans)
     datZs= [(i-np.mean(datMeans))/datDev for i in datMeans]
     zBads= [i for i,val in enumerate(datZs) if np.abs(val) >=thresh/2]
+    
+ 
     return set(maxBads+zBads)
 
 
-# In[44]:
+# In[3]:
 
 
-def extract_blocks(trigger_name, subj, srate=512, blockMin=90000, eventMin=256,gap=2000, trigger_len=700, thresh=.09):
+def extract_blocks(data, times, subj, tasks=[], 
+                   srate=512, blockMin=90000, eventMin=256,gap=2000, trigger_len=700, thresh=.09):
     scalar = int(srate/512)
     blockMin = scalar * blockMin
     eventMin = scalar * eventMin
     gap = scalar * gap
     trigger_len = scalar * trigger_len
 
-    data,times = raw.copy().pick_channels([trigger_name])[:,:]
+    
     data = data-np.mean(data)#mean center
+    data=data.clip(min=0)
     data= data/abs(max(data.T))#normalize
-    task=['picN', 'visRead', 'audRep','audN', 'senComp']
+    task=['PicN','VisRead','AudRep','AudN','SenComp']
     i=0
     blocks=[]
     spikes=0
+   
     while i< len(times):
         
         j=0
         if data.T[i]>thresh:
-#           
+         
             spikes+=1
             hit=times[i]*srate # marks index-time for trigger 
             i=i+70*scalar       #advances more than length of trigger spike
@@ -789,27 +780,29 @@ def extract_blocks(trigger_name, subj, srate=512, blockMin=90000, eventMin=256,g
             i=i+50*scalar
     
         i=i+1
+    sums=[]
     blocks=np.asarray(blocks)
     blocks=blocks.astype(int)
-#     data= abs(data)
-#     smooz_data = savgol_filter(data[0,:], 153, 3)
-#     blockSums= [int(sum(abs(data[0][(blocks[t]-trigger_len):(blocks[t])]))) for t,v in enumerate(blocks)]
+   
+    tasks = ['VisRead','PicN','AudRep','AudN','SenComp'] 
+    taskorder=[]
+    for i in blocks:
+         
+        trigSum=sum(data[0][math.floor(i-trigger_len):i])
+        
+        sums.append(trigSum)
     
-#     taskorder=[]
-#     for i in blockSums:
-#         if i > 110:
-#             taskorder.append('picN')
-#         elif i >100:
-#             taskorder.append('visRead')
-#         elif i >40:
-#             taskorder.append('audRep')
-#         elif i >24:
-#             taskorder.append('audN')
-#         elif i  >15:
-#             taskorder.append('senComp')       
-                
-    
+    def sortFirst(val): 
+        return val[0] 
+    sumEn=[(v,i) for i,v in enumerate(sums)]
+    sumEn.sort(key=sortFirst, reverse=True)
+   
+    order=[v for i,v in sumEn]
+
+    taskorder=[task[i] for i in order]
+            
     print('Found {0} blocks for {1}\n'.format(len(blocks), subj))
+    print('task order: ',taskorder)
     block_times=[]
     for t,v in enumerate(blocks):
         try:
@@ -824,51 +817,46 @@ def extract_blocks(trigger_name, subj, srate=512, blockMin=90000, eventMin=256,g
         
 #     print('Block order followed by index times are as follows: {0} \n {1}'.format(taskorder[:], block_times[:]))   
     print('Block index times are as follows: {0}'.format(block_times[:]))  
-    return block_times
+    return order, block_times
 
 
 # # Signal processing methods
 
-# In[4]:
+# In[46]:
 
 
 # zero mean each feature and divide each feature by its L2 norm
 def normalize(matrix):
     num_feats = np.shape(matrix)[0]
-    
-    # Zero mean
     the_mean = np.reshape(np.mean(matrix, axis = 1), (num_feats, 1))
     matrix = matrix - the_mean
     
-    # Normalize
-    #the_norm = np.reshape(np.linalg.norm(matrix, axis = 1), (num_feats,1))
-    #matrix = matrix/the_norm
-    matrix = norm(matrix, 'l2')
+    the_norm = np.reshape(np.linalg.norm(matrix, axis = 1), (num_feats,1))
+    matrix = matrix/the_norm
     return matrix
 
 
-# In[8]:
+# In[60]:
 
 
-# wind_len in units of spec time frames, or number of frames you want to time delay by
-def time_delay(X_data, wind_len):
+def time_delay_updated(X_data, wind_len):
     n_freq = np.shape(X_data)[1]
-    # Make X
+    # Make X and y one trial
     X_one_trial = np.concatenate(X_data, axis = 1)
+    
     x = []
     x.append(X_one_trial[:, :]) #nondelayed collapsed spec
     
     for i in range(1, wind_len):
-        the_pad = np.zeros((n_freq, i)) 
-        the_data = np.concatenate((the_pad,X_one_trial[:, :-i]) , axis = 1) #pad our delayed data
-
+        the_pad = np.zeros((n_freq, i)) ## or voss i guess?
+        the_data = np.concatenate((X_one_trial[:, i:], the_pad) , axis = 1) #pad our delayed data
         x.append(the_data)
     
     x = np.concatenate(x, axis = 0) #collapse again so each row (freq) is trials x time delays
     return np.asarray(x)
 
 
-# In[9]:
+# In[58]:
 
 
 # Pad signal with noise, or otherwise zeros
@@ -877,7 +865,9 @@ def pad_data(signal, sf, aud_len, len_spec_window, noise = True):
     
     total_length = int(sf*(aud_len + len_spec_window))
     pad_length = total_length - len(signal)
+    
     pad = voss(pad_length) if noise else np.zeros(pad_length)
+        
     new_signal = np.concatenate((signal, pad))
     return new_signal
 
@@ -918,44 +908,36 @@ def file_to_waveform(file, make_plot = False, return_info = False):
             return (signal, fs, seconds, frames)
 
 
-# In[7]:
+# In[48]:
 
 
 # window and overlap time are in seconds
 # pretty sure this is the good one :) 
-def make_spectrogram(signal, fs, plot_dim, window_time = 0.04, overlap_time = 0.02, zero_out = (1,0), make_plot = True): 
+def make_spectrogram(signal, fs, window_time = 0.04, overlap_time = 0.02, min_x = 0, 
+                     max_x = 8, min_y = 0, max_y = 8000, dyn_range = 120, make_plot = True):
     
     x = np.array(signal)
     window_length = int(window_time * fs)
     overlap_length = int(overlap_time * fs)
     f, t, intensity = spectrogram(x, fs, nperseg = window_length, noverlap = overlap_length)
-    intensity = intensity[1:]
     np.place(intensity, intensity == 0, [1e-300])
     
     logIntensity = np.log10(intensity)
     
-    if zero_out != (1,0):
-        logIntensity = zero_out[0]*logIntensity + zero_out[1]
-        np.place(logIntensity, logIntensity <= 0, [0])
-        
-    if make_plot: 
-        plot_dim.x1 = 0 if plot_dim.x1 == '' else plot_dim.x1
-        plot_dim.y1 = 0 if plot_dim.y1 == '' else plot_dim.y1
-        plot_dim.z1 = logIntensity.min() if plot_dim.z1 == '' else plot_dim.z1
+    if make_plot:
+        p_ref = 2e-5
+        dB_max = 10 * (logIntensity.max() - 2*np.log10(p_ref))
+        vmin = p_ref * 10 ** ((dB_max - dyn_range) / 10)
 
-        plot_dim.x2 = np.shape(x)[0]/fs if plot_dim.x2 == '' else plot_dim.x2
-        plot_dim.y2 = int(fs/2) if plot_dim.y2 == '' else plot_dim.y2
-        plot_dim.z2 = logIntensity.max() if plot_dim.z2 == '' else plot_dim.z2
-        
-        extent = (t.min(), t.max(), f.min(), f.max())    
-        plt.ylim(plot_dim.y1, plot_dim.y2)
-        plt.xlim(plot_dim.x1, plot_dim.x2)
+        # other arguments to the figure
+        extent = (t.min(), t.max(), f.min(), f.max())
+        plt.ylim(min_y,max_y)
+        plt.xlim(min_x,max_x)
         plt.ylabel('Frequency [Hz]')
         plt.xlabel('Time [sec]')
-        plt.imshow(logIntensity, origin='lower', aspect='auto', cmap='Spectral_r',
-                   extent=extent, vmin=plot_dim.z1, vmax=plot_dim.z2)
-        #plt.colorbar()
-        
+        plt.imshow(logIntensity, origin='lower', aspect='auto', cmap='hot_r',
+                   extent=extent, vmin=vmin, vmax=None)
+
     return f, t, logIntensity
 
 
@@ -1025,13 +1007,13 @@ def plot_FT(signal, freq_bound, return_FT = False, convolve = False, wind = 0):
             return smooth
 
 
-# In[42]:
+# In[52]:
 
 
-def spectral_sub (plot_dim, file =  "", signal = [], fs = 0, new_file_name = "", noise_int = (0,1), 
+def spectral_sub (file =  "", signal = [], fs = 0, new_file_name = "", noise_int = (0,1), 
               frame_time = 0.04, overlap = 0.5, p = 1, alpha = 1, beta = 0.15, window = sp.hanning, 
               compare_specs = True, return_spec = False, spec_window_time = 0.04, 
-              spec_overlap_time = 0.02, compare_waveforms = False, return_signal = False, zero_out = (1,0)):
+              spec_overlap_time = 0.02, compare_waveforms = False, return_signal = False):
               
     
     if file:
@@ -1154,19 +1136,14 @@ def spectral_sub (plot_dim, file =  "", signal = [], fs = 0, new_file_name = "",
         
     # Comparing spectrograms, or just returning the clean spectrogram, if you want
     if compare_specs == True:
-        F_old, T_old, I_old = make_spectrogram(signal, fs = fs, plot_dim = plot_dim, window_time = spec_window_time, overlap_time = spec_overlap_time, zero_out = zero_out)
-        plt.colorbar()
+        F_old, T_old, I_old = make_spectrogram(signal, fs, spec_window_time, spec_overlap_time)
         plt.show()
-        
-        F, T, I = make_spectrogram(final_clean_signal, fs = fs, plot_dim = plot_dim, window_time = spec_window_time, overlap_time = spec_overlap_time, zero_out= zero_out)
-        plt.colorbar()
-        plt.show()
-
+        F, T, I = make_spectrogram(final_clean_signal, fs, spec_window_time, spec_overlap_time)
         if return_spec == True:
             return I
     else:
         if return_spec == True:
-            F, T, I = make_spectrogram(final_clean_signal, fs = fs, plot_dim = plot_dim, window_time = spec_window_time, overlap_time = spec_overlap_time, zero_out= zero_out, make_plot = False)
+            F, T, I = make_spectrogram(final_clean_signal, fs, spec_window_time, spec_overlap_time, make_plot=False)
             return I
         
     # Write new audio to file, if you want 
@@ -1179,8 +1156,227 @@ def spectral_sub (plot_dim, file =  "", signal = [], fs = 0, new_file_name = "",
         return final_clean_signal
 
 
-# In[ ]:
+# This section includes old versions of methods.
 
+# def create_CAR_original(subj, block, bad_elecs, root_path):
+#     if subj.startswith("NY"): #checks for NYU subject IDS
+#         if create_dir==True:
+#             if root_path.endswith(subj):
+#                 data_path = op.join(root_path, "data", block, "gdat.h5")
+#             elif root_path.endswith("subjsPython"):
+# 
+#                 data_path = op.join(root_path, subj, "data", block, "gdat.h5")
+#             else:
+#                 data_path = op.join(root_path, "subjsPython", subj, "data", block, "gdat.h5")
+#         else:
+#             data_path = op.join(root_path, "data", block, "gdat.h5")
+#     else:
+#         raise ValueError("Subject number must start with NY")
+#             
+#     data = load_h5(data_path, "gdat")
+#     good_data = [data[i] for i in range(len(data)) if i not in bad_elecs]
+#     good_data_zero_meaned = [good_data[i] - np.mean(good_data[i]) for i in range(len(good_data))]
+#     reference = np.mean(good_data_zero_meaned, axis = 0)
+#     reference.resize((1,np.shape(reference)[0]))
+#     new_data = np.subtract(good_data_zero_meaned, reference)
+#     
+#     #saving
+#     if root_path.endswith(subj):
+#             
+#         save_h5(op.join(root_path, "data", block,'car.h5'), "car", reference)
+#         print('saving CAR')
+#         save_h5(op.join(root_path, "data", block, 'car_data.h5'), "car_data", new_data)
+#         print('saving Car Data')
+#     elif root_path.endswith("subjsPython"):
+#         save_h5(op.join(root_path, subj, "data", block,'car.h5'), "car", reference)
+#         print('saving CAR')
+#         save_h5(op.join(root_path, subj, "data", block, 'car_data.h5'), "car_data", new_data)
+#         print('saving Car Data')
+#             
+#     else:
+#         save_h5(op.join(root_path, "subjsPython", subj, "data", block,'car.h5'), "car", reference)
+#         print('saving CAR')
+#         save_h5(op.join(root_path, "subjsPython", subj, "data", block, 'car_data.h5'), "car_data", new_data)
+#         print('saving Car Data')
+#     
+#     
+#     return new_data, reference
 
+# def extract_blocks_original(trigger_name, subj, srate, blockMin=90000, eventMin=256,gap=15000, trigger_len=2600):
+#     
+#     data,times = raw.copy().pick_channels([trigger_name])[:,:]
+#     trig_str= ['picN_trigger','visRead_trigger','audRep_trigger','audN_trigger','senComp_trigger']
+#     task=['picN', 'visRead', 'audRep','audN', 'senComp']
+# 
+#     #loading triggers from file
+#     picN_trigger=load_h5(op.join(home_path,'picN_trigger.h5'),'picN_trigger')
+#     visRead_trigger=load_h5(op.join(home_path,'visRead_trigger.h5'),'visRead_trigger')
+#     audRep_trigger=load_h5(op.join(home_path,'audRep_trigger.h5'),'audRep_trigger')
+#     audN_trigger=load_h5(op.join(home_path,'audN_trigger.h5'),'audN_trigger')
+#     senComp_trigger=load_h5(op.join(home_path,'senComp_trigger.h5'),'senComp_trigger')
+#     
+#     triggers= [picN_trigger,visRead_trigger,audRep_trigger,audN_trigger,senComp_trigger]
+#     
+#     picN_lag = np.argmax(correlate(data[0], picN_trigger))+trigger_len
+#     visRead_lag= np.argmax(correlate(data[0], visRead_trigger))+trigger_len
+#     audRep_lag=np.argmax(correlate(data[0], audRep_trigger))+trigger_len
+#     audN_lag=np.argmax(correlate(data[0], audN_trigger))+trigger_len
+#     senComp_lag=np.argmax(correlate(data[0], senComp_trigger))+trigger_len
+#     lags= [picN_lag,visRead_lag, audRep_lag, audN_lag,senComp_lag]
+#     for i,t in enumerate(triggers):
+#         if max(correlate(data[0], t))<20: 
+#             lags.remove(lags[i])
+#     lags= [picN_lag,visRead_lag, audRep_lag, audN_lag,senComp_lag]
+#     enum_lags = list(enumerate(lags))
+#     sorted_lags=sorted(enum_lags, key=lambda x: x[1])
+#     lag_tags = ['picN_lag','visRead_lag', 'audRep_lag', 'audN_lag','senComp_lag']
+#     sorted_tags=[lag_tags[i] for i,j in sorted_lags]
+#     task=[task[i] for i,j in sorted_lags]
+#     
+#     print('Found {0} blocks for {1}\n'.format(len(lags), subj))
+#     
+#     block_times = []
+#     
+#     for t,v in enumerate(lags):
+#         try:
+#             block_times.append([int(v),int(lags[t+1]-gap)])
+#         except:
+#             if int(v)+gap <= len(data):
+#                 block_times.append([int(v),int(v)+gap])
+#                 
+#             else:
+#                 block_times.append([int(v),int(times[-1]*srate)])
+#                 
+#     
+#     print('Block order followed by index times are as follows: {0} \n {1}'.format(task[:], block_times[:]))
+#      
+#     return block_times
 
+# def another_extract_blocks_old(trigger_name, subj, srate=512, blockMin=90000, eventMin=256,gap=15000, trigger_len=2600):
+#     data,times = raw.copy().pick_channels([trigger_name])[:,:]
+#     data = data-np.mean(data)#mean center
+#     data= data/abs(max(data.T))#normalize
+#     task=['picN', 'visRead', 'audRep','audN', 'senComp']
+#     i=0
+#     triggers=0
+#     blocks=[]
+#     while i< len(times):
+#         j=0
+#         if data.T[i]>.7:
+#             hit=times[i]*srate # marks index-time for trigger 
+#             i=i+70       #advances more than length of trigger spike
+#             triggers+=1
+#             while j<50:  #searches for next spike of block-level trigger
+#                 j=j+1
+#                 if data.T[i+j]>.7: # if found, mark the hit time
+#                     blocks.append(hit+trigger_len)
+#                     i=i+blockMin  #advance a little below the minimum block time
+#                     j=51          # exit j-loop
+#                     #### need to account for finding task triggers
+#             i=i+50
+#         i=i+1
+#     blocks=np.asarray(blocks)
+#     blocks=blocks.astype(int)
+#     blockSums= [int(sum(abs(data[0][(blocks[t]-trigger_len):(blocks[t])]))) for t,v in enumerate(blocks)]
+# 
+#     taskorder=[]
+#     for i in blockSums:
+#         if i > 139:
+#             taskorder.append('picN')
+#         elif i >100:
+#             taskorder.append('visRead')
+#         elif i >40:
+#             taskorder.append('audRep')
+#         elif i >30:
+#             taskorder.append('audN')
+#         elif i  >20:
+#             taskorder.append('senComp')       
+#                 
+#     print('blockS', blockSums)
+#     print('Found {0} blocks for {1}\n'.format(len(blocks), subj))
+#     block_times=[]
+#     for t,v in enumerate(blocks):
+#         try:
+#             block_times.append([int(v),int(blocks[t+1]-gap)])
+#         except:
+#             if hit+gap <= len(data):
+#                 block_times.append([int(v),int(hit+gap)])
+#                 
+#             else:
+#                 block_times.append([int(v),int(times[-1]*srate)])
+#                 
+#         
+#     print('Block order followed by index times are as follows: {0} \n {1}'.format(taskorder[:], block_times[:]))    
+#     return block_times
 
+# # window and overlap time are in seconds
+# # plots in log scale, doesn't calculate intensity in log scale
+# def make_spectrogram_old(signal, fs, window_time = 0.04, overlap_time = 0.02, min_x = 0, 
+#                      max_x = 30, min_y = 0, max_y = 8000, dyn_range = 120, make_plot = True):
+#     
+#     x = np.array(signal)
+#     window_length = int(window_time * fs)
+#     overlap_length = int(overlap_time * fs)
+#     f, t, intensity = spectrogram(x, fs, nperseg = window_length, noverlap = overlap_length)
+#     #np.place(intensity, intensity == 0, [0.000001])
+#     #intensity[intensity == 0] = 0.00001
+#     #logIntensity = np.log10(intensity)
+#     
+#     if make_plot:
+#         p_ref = 2e-5
+#         dB_max = 10 * np.log10(intensity.max() / (p_ref ** 2))
+#         vmin = p_ref * 10 ** ((dB_max - dyn_range) / 10)
+# 
+#         # other arguments to the figure
+#         extent = (t.min(), t.max(), f.min(), f.max())
+#         plt.ylim(min_y,max_y)
+#         plt.xlim(min_x,max_x)
+#         plt.ylabel('Frequency [Hz]')
+#         plt.xlabel('Time [sec]')
+#         plt.imshow(intensity, origin='lower', aspect='auto', cmap='hot_r',
+#                   norm=LogNorm(), extent=extent, vmin=vmin, vmax=None)
+# 
+#     return f, t, intensity
+
+# # Time delays the data, returns time delayed data matrix and response vector
+# def time_delay_data_old(data_matrix, response_vector, remaining_frames, wind_len):
+#     
+#     new_X = []
+#     new_y = []
+#     
+#     # Properly construct the X matrix (concat trials together (need to implement))
+#     for ind, spec in enumerate(data_matrix):
+#         x = []
+#         for k in range(remaining_frames):
+#             x.append(spec[: , k:k+wind_len])
+#         x = np.concatenate(x, axis = 0)
+#         new_X.append(x)
+#         new_y.append(y[ind][0:wind_len])
+#         
+#     # These are the y and X data we want to work with
+#     new_X = np.asarray(new_X)
+#     new_y = np.asarray(new_y)    
+#     
+#     return new_X, new_y
+
+# # plot the Fourier Transform of your signal (given it's in the frequency domain)
+# def plot_FT_old(FT_signal, fs, min_x, max_x, min_y, max_y):
+#     
+#     # period is time between frames
+#     period = 1/fs
+#     N = len(FT_signal)
+#     
+#     # Get frequencies and sort them
+#     freqs = np.fft.fftfreq(N, period)
+#     idx = np.argsort(freqs)
+#     
+#     # Power spectrum
+#     power_spec = np.abs(FT_signal)
+#     
+#     # Plotting
+#     plt.title('Signal Fourier Transform')
+#     plt.xlabel("Frequency (Hz)")
+#     plt.ylabel("Intensity")
+#     plt.xlim(min_x,max_x)
+#     plt.ylim(min_y,max_y)
+#     plt.plot(freqs[idx], power_spec[idx])
