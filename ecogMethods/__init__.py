@@ -17,6 +17,10 @@ import os.path as op
 import h5py
 import warnings
 import time
+import hdf5storage
+from visbrain.gui import Brain
+from visbrain.objects import SourceObj, BrainObj
+from visbrain.io import download_file
 
 import scipy as sp
 
@@ -48,8 +52,6 @@ class Events:
         self.onset = []
         self.badevent = []
         self.offset = []
-        self.block =[]
-        self.react = []
         self.onset_r = []
         self.offset_r = []
         self.stimfile = []
@@ -60,7 +62,7 @@ class Events:
 
 
 class Globals:
-    def __init__(self, SJdir, ANdir, DTdir, subj, srate, ANsrate, elecs, bad_elecs, tank):
+    def __init__(self, SJdir, ANdir, DTdir, subj, srate, ANsrate, elecs, bad_elecs):
         self.SJdir= SJdir
         self.ANdir= ANdir
         self.DTdir= DTdir
@@ -69,7 +71,6 @@ class Globals:
         self.ANsrate= ANsrate 
         self.elecs= elecs 
         self.bad_elecs= bad_elecs
-        self.tank= tank
 
 
 # In[32]:
@@ -77,18 +78,15 @@ class Globals:
 
 ## whats parameter g? could reduce number of params/attributes
 class Params:
-    def __init__(self, st, en, plot, baseline, bl_st, bl_en, scale, noCar, g):
+    def __init__(self, st, en, plot, baseline, bl_st, bl_en, noCar, g):
         self.st   = -200            #start time window
         self.en   = 1700            #end time window
         self.plot = 200             #plotting x-axis ticks every 200 ms
         self.baseline = True          #baseline flag
         self.bl_st    = -250        #baseline start 
         self.bl_en    = -50         #baseline end
-        self.scale = 0.7            #scale colorbar to [-0.8 0.8]*maximal response
         self.noCar = False
         self.limit=''
-        self.thickness= 2
-        self.gauss_width= 1
         self.do_plot= 1
         self.response_lock=False
         self.shade_plot = True
@@ -140,7 +138,7 @@ def load_h5(path, name): # load HDF5 files
 # In[35]:
 
 
-def create_subj_globals(subj, block, srate, ANsrate, elecs, bad_elecs, TANK, 
+def create_subj_globals(subj, block, srate, ANsrate, elecs, bad_elecs, 
                         root_path = r'\\research-cifs.nyumc.org\Research\Epilepsy_ECOG\SharedAnalysis\Testing',
                        create_dir= False, NY=False):
     a = "analysis"
@@ -213,7 +211,7 @@ def create_subj_globals(subj, block, srate, ANsrate, elecs, bad_elecs, TANK,
             print (creatD, DTdir) 
         else: raise Exception(direcEr) 
             
-    if not 'tank' in locals(): tank= []
+
     
     SG = op.join(ANdir, "subj_globals.h5")
     print('Saving global variables in ' + str(SG))
@@ -221,12 +219,12 @@ def create_subj_globals(subj, block, srate, ANsrate, elecs, bad_elecs, TANK,
     if op.exists(SG):
         os.remove(SG)
         
-    g = Globals(SJdir, ANdir, DTdir, subj, srate, ANsrate, elecs, bad_elecs, tank)
+    g = Globals(SJdir, ANdir, DTdir, subj, srate, ANsrate, elecs, bad_elecs)
     
     dt = h5py.special_dtype(vlen=bytes)
     hf = h5py.File(SG, 'w')
     grp = hf.create_group('subject_globals')
-    gdirs = np.array([g.SJdir, g.ANdir, g.DTdir, g.subj, str(print(g.tank))])
+    gdirs = np.array([g.SJdir, g.ANdir, g.DTdir, g.subj])
 
     # creating H5 datasets
     asciiList = [n.encode("ascii", "ignore") for n in gdirs]
@@ -249,7 +247,7 @@ def get_subj_globals(subj, block, root_path = r'\\research-cifs.nyumc.org\Resear
     if from_mat:
         glob= hdf5storage.loadmat(op.join(matDir,a,block,'subj_globals.mat'))
         G = Globals(op.join(matDir),op.join(matDir,a,block), op.join(matDir,'data',block), glob['subj'][0],glob['srate'][0][0],
-                    glob['ANsrate'][0][0], glob['elecs'][0], glob['bad_elecs'][0], glob['TANK'][0])
+                    glob['ANsrate'][0][0], glob['elecs'][0], glob['bad_elecs'][0])
     else:
         pth= root_path
         if ~subj.startswith("NY") & NY==True:
@@ -267,7 +265,7 @@ def get_subj_globals(subj, block, root_path = r'\\research-cifs.nyumc.org\Resear
         gelecs= np.array(x['/subject_globals/elecs'])
         gbads= np.array(x['/subject_globals/bad_elecs'])
         G = Globals(dirs[0][0].decode("utf-8"),dirs[1][0].decode("utf-8"), dirs[2][0].decode("utf-8"),
-                    dirs[3][0].decode("utf-8"), int(gsrate), int(gANsrate), gelecs, gbads, dirs[4][0].decode("utf-8"))
+                    dirs[3][0].decode("utf-8"), int(gsrate), int(gANsrate), gelecs, gbads)
         hf.close()
     return G
 
@@ -302,7 +300,7 @@ def extract_task_events(data,times, task, subj, srate = 512,start=0, eventMin = 
             onsets+=1
             e1.event.append(task+'_'+str(len(e1.onset)))
             i=i+(eventMin)
-            if len(e1.onset)<practiceTrials:
+            if len(e1.onset)<practiceTrials+1:
                 e1.badevent.append(1)
             else:
                 e1.badevent.append(0)
@@ -399,7 +397,7 @@ def band_pass(signal, sampling_rate=1000, lower_bound=70, upper_bound=150, tm_OR
     x= np.arange(0,max_freq+1,df)
     gauss_width = 1
     
-    if wind != 'flatgauss' and wind!= 'HMFWgauss':
+    if str(wind).isnumeric():
         gauss_width = wind
         wind = 'flatgauss'
 
@@ -558,9 +556,9 @@ def create_CAR(subj, block, bad_elecs, root_path, create_dir= False, NY=False):
 
 
 def plot_single(subj, task, elec, params, root_path,
-                f1=70, f2=150, raw=0, gdat = '', db=0, ignore_target='', from_mat=False, matDir=''):
+                f1=70, f2=150, raw=0, gdat = '', ignore_target='', from_mat=False, matDir=''):
 #     raw    - 0 for raw trace, 1 for power envelope
-#     db     - flag to go into debug mode after plotting
+
 #     params - default are:
 #        params.st   = -200;            #start time window
 #        params.en   = 1700;            #end   timw window
@@ -568,7 +566,6 @@ def plot_single(subj, task, elec, params, root_path,
 #        params.baseline = 1;           #baseline flag
 #        params.bl_st    = -250;        #baseline start
 #        params.bl_en    = -50;         #baseline end
-#        params.scale = 0.8;            #scale colorbar to [-0.8 0.8]*maximal response
 #
 #  Usage:
 #        plot_single_phr('JH1','phr',45,70,150);
@@ -578,7 +575,6 @@ def plot_single(subj, task, elec, params, root_path,
 #        params.en   = 2000;
 #        params.plot = 250;
 #        params.baseline = 0;
-#        params.scale = 0.8;
 #        plot_single('JH2','phr',22,0.1,20,0,params)
     TrialsMTX = [] 
     x = get_subj_globals(subj, task, root_path, from_mat=from_mat, matDir=matDir)
@@ -614,24 +610,19 @@ def plot_single(subj, task, elec, params, root_path,
     plot_jump = params.plot
     baseline = params.baseline
     if baseline:
-        bl_st  = round(params.bl_st /1000*srate)
-        bl_en  = round(params.bl_en /1000*srate)
-    scale = params.scale
+        bl_st  = params.bl_st 
+        bl_en  = params.bl_en
     if params.limit != "":
         limit = params.limit
-    if params.thickness != "":
-        thickness = params.thickness
-    if params.gauss_width != "":
-        gauss_width = params.gauss_width
     if params.do_plot != "":
         do_plot = params.do_plot
 
     clr_res = 'k'
     clr_h   = 'k'
-    tm_st  = round(start_time_window/1000*srate)
-    tm_en  = round(end_time_window/1000*srate)
+    tm_st  = start_time_window
+    tm_en  = end_time_window
     events.onset=np.round(events.onset/x.srate*srate)
-    jm = round(plot_jump/1000*srate)
+    jm = plot_jump
     if raw == 0:
         band = abs(my_hilbert(band, srate, f1, f2))
 #         print("plot mode - analytic amplitude")
@@ -641,12 +632,10 @@ def plot_single(subj, task, elec, params, root_path,
     elif raw == 2:
         band = my_hilbert(band, srate, f1, f2, 1, 'HMFWgauss')
         baseline = 0
-        scale = 1
         clr_res = 'k'
 #         print('plot mode - hilbert transform using HMFW gaussian window')
     elif raw == 3:
         band =  20*np.log10(abs(my_hilbert(band, srate, f1, f2)))
-        scale = 1
 #         print('plot mode - log power analytic amplitude')
     else:
         raise ValueError("raw values can only be 0 through 3")
@@ -712,13 +701,14 @@ def extract_blocks(data, times, subj, tasks=[],
     blockMin = int(scalar * blockMin)
     gap = int(scalar * gap)
     trigger_len = scalar * trigger_len #length of block level trigger
+
+    
+    data = data[0]-np.mean(data[0])#mean center
+    data=data.clip(min=0)
+    data= data/abs(max(data.T))#normalize
     if thresh=='':
         thresh= abs(max(data.T))/8
         print('thresh automatically set to: ',thresh) 
-    
-    data = data-np.mean(data)#mean center
-    data=data.clip(min=0)
-    data= data/abs(max(data.T))#normalize
 
     i=0
     blocks=[]
@@ -1118,6 +1108,30 @@ def spectral_sub (plot_dim, file =  "", signal = [], fs = 0, new_file_name = "",
 
 
 # In[ ]:
+
+def fileToFrame(dir_name,file, sfoot=0):
+    data_file_delimiter = ' '
+    largest_column_count = 0
+
+    # Loop the data lines
+    with open(op.join(dir_name,file), 'r') as temp_f:
+        # Read the lines
+        lines = temp_f.readlines()
+
+        for l in lines:
+            # Count the column count for the current line
+            column_count = len(l.split(data_file_delimiter)) + 1
+
+            # Set the new most column count
+            largest_column_count = column_count if largest_column_count < column_count else largest_column_count
+    # Close file
+    temp_f.close()
+    # Generate column names (will be 0, 1, 2, ..., largest_column_count - 1)
+    column_names = [i for i in range(0, largest_column_count)]
+    df=pd.read_csv(op.join(dir_name,file),header=None,delim_whitespace=True,names=column_names,skipfooter=sfoot)
+    
+    return df
+
 
 
 
