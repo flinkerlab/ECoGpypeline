@@ -688,24 +688,8 @@ def plot_single(subj, task, elec, params, root_path,
         band = band_pass(band, srate, f1, f2)
     #         print("plot mode - raw zscores of baseline")
     elif raw == 3:
-        band = abs(my_hilbert(band, srate, f1, f2))
-    #         print('plot mode - amplitude zscores of baseline')
-    elif raw == 4:
-        band = my_hilbert(abs(my_hilbert(band, srate, f1, f2)), srate, params.nest_f1, params.nest_f2)
-        baseline = 0
-        scale = 1
-        clr_res = 'k'
-    #         print('plot mode - theta hilbert of amplitude')
-    elif raw == 5:
-        band = my_hilbert(band, srate, f1, f2, 1, 'HMFWgauss')
-        baseline = 0
-        scale = 1
-        clr_res = 'k'
-    #         print('plot mode - hilbert')
-    elif raw == 6:
-        band = 20 * np.log10(abs(my_hilbert(band, srate, f1, f2)))
-        scale = 1
-    #         print('plot mode - log power compared to baseline')
+        band = 20*np.log10(abs(my_hilbert(band, srate, f1, f2)))
+    #         print('plot mode - log power analytic amplitude')
     else:
         raise ValueError("raw values can only be 0 through 6")
     cnt = 0
