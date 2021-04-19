@@ -768,17 +768,21 @@ def find_aud_elecs(elecs, labels, subj, the_task, the_params, pth, from_mat_bool
 # In[22]:
 
 
-def detect_bads(signal, low_bound=10, up_bound=65, convolve=False, wind=0, plot=False, thresh=1):
-    datMaxs = [max(abs(i)) for i in data]
+def detect_bads(signal, low_bound=10, up_bound=65, convolve = False, wind = 0, plot=False,thresh=1):
+    datMaxs = [max(abs(i)) for i in signal]
     maxDev = np.std(datMaxs)
+    #     print('maxDev: ', maxDev)
     maxZs = [(i - np.mean(datMaxs)) / maxDev for i in datMaxs]
-    maxBads = [i for i, val in enumerate(maxZs) if np.abs(val) >= .8]
-    ft_sig = [np.abs(np.fft.fft(i))[low_bound:up_bound] for i in signal]
-    datMeans = [np.mean(i) for i in ft_sig[:]]
-    datDev = np.std(datMeans)
-    datZs = [(i - np.mean(datMeans)) / datDev for i in datMeans]
-    zBads = [i for i, val in enumerate(datZs) if np.abs(val) >= thresh / 2]
-    return set(maxBads + zBads)
+    maxBads = [i for i, val in enumerate(maxZs) if np.abs(val) >= .8 * thresh]
+#     print('maxBads: ', maxBads)
+    datMeans= [np.mean(i) for i in ft_sig[:]]
+    datDev= np.std(datMeans)
+#     print('datDev: ', datDev)
+    datZs= [(i-np.mean(datMeans))/datDev for i in datMeans]
+    zBads= [i for i,val in enumerate(datZs) if np.abs(val) >=thresh/1.8]
+#     print('zBads: ', zBads)
+
+    return set(maxBads+zBads)
 
 
 # In[23]:
