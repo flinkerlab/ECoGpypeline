@@ -16,6 +16,9 @@ import os.path as op
 import h5py
 import warnings
 import time
+from visbrain.gui import Brain
+from visbrain.objects import SourceObj, BrainObj
+from visbrain.io import download_file
 import math
 
 import scipy as sp
