@@ -1211,7 +1211,27 @@ def spectral_sub(plot_dim, file="", signal=[], fs=0, new_file_name="", noise_int
 
 
 # In[33]:
+def fileToFrame(dir_name,file, sfoot=0):
+    data_file_delimiter = ' '
+    largest_column_count = 0
 
+    # Loop the data lines
+    with open(op.join(dir_name,file), 'r') as temp_f:
+        # Read the lines
+        lines = temp_f.readlines()
+        for l in lines:
+            # Count the column count for the current line
+            column_count = len(l.split(data_file_delimiter)) + 1
+
+            # Set the new most column count
+            largest_column_count = column_count if largest_column_count < column_count else largest_column_count
+    # Close file
+    temp_f.close()
+    # Generate column names (will be 0, 1, 2, ..., largest_column_count - 1)
+    column_names = [i for i in range(0, largest_column_count)]
+    df = pd.read_csv(op.join(dir_name, file), header=None, delim_whitespace=True, names=column_names, skipfooter=sfoot)
+
+    return df
 
 # returns instances of a pattern in a list
 def subfinder(mylist, pattern):
