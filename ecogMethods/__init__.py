@@ -23,7 +23,7 @@ import math
 
 import scipy as sp
 
-from scipy.signal import spectrogram, hamming, resample_poly
+from scipy.signal import spectrogram, hamming, resample_poly, savgol_filter
 from scipy.io import wavfile as wf
 
 import matplotlib as mpl
@@ -308,7 +308,7 @@ def extract_task_events(trigger_name, task, subj, srate=512, start=0, stop='', e
     data = data - np.mean(data)  # mean center
     data = data / abs(max(data.T))  # normalize
     data = data.clip(min=0)
-    data = sig.savgol_filter(data[0, :], window_length=93, polyorder=1)
+    data = savgol_filter(data[0, :], window_length=93, polyorder=1)
     if thresh == '':
         thresh = abs(max(data.T)) / 2
     i = 0
@@ -639,7 +639,7 @@ def plot_single(subj, task, elec, params, root_path,
     else:
         band = gdat[elec, :]
     if x.srate != 1000:
-        band = sig.resample_poly(band, 1000, x.srate)
+        band = resample_poly(band, 1000, x.srate)
         srate = 1000
     pseudo = 0
     # pre = block
